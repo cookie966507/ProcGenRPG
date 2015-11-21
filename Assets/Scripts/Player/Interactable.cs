@@ -7,10 +7,15 @@ using System.Collections;
  */
 public abstract class Interactable : MonoBehaviour {
 
+	private int frameOffset = 20;
+	private int lastFrame = 0;
+
 	/**
 	 * true if the player is within the trigger of the interactable item
 	 */
 	private bool canInteract;
+
+	protected bool preventInteraction = false;
 
 	/**
 	 * Calls the interact method when the player hits the use key within range
@@ -18,10 +23,15 @@ public abstract class Interactable : MonoBehaviour {
 	protected void OnTriggerStay(Collider other) {
 		if (other.gameObject.GetComponent<Player>() != null) {
 			canInteract = true;
-			if (Player.useKey == null) {
+			if (PersistentInfo.useKey == null) {
 				Debug.LogError("Player use key is not set");
-			} else if (Input.GetKeyDown(Player.useKey)) {
-				Interact();
+			} else if (Input.GetKeyDown(PersistentInfo.useKey)) {
+				if(Time.frameCount - lastFrame > frameOffset) {
+					if(!preventInteraction) {
+						Interact();
+					}
+					lastFrame = Time.frameCount;
+				}
 			}
 		}
 	}

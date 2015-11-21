@@ -40,16 +40,26 @@ public class Status : ActionEventListener {
 	/**
 	 * A string list of the names of the areas the player has visited
 	 */
-	private List<string> visitedAreas;
+	private List<Point> visitedAreas;
+
+	/**
+	 * The player's current tier
+	 */
+	private int tier;
+
+	/**
+	 * The player's current level
+	 */
+	private int level;
 
 	/**
 	 * Privatize the constructor to revoke access per the singelton
 	 * implementation
 	 */
-	private Status() : base() {
+	private Status() {
 		recentActions = new Queue<IAction> ();
 		enemiesKilled = new Dictionary<string, int> ();
-		visitedAreas = new List<string> ();
+		visitedAreas = new List<Point> ();
 	}
 
 	/**
@@ -58,6 +68,17 @@ public class Status : ActionEventListener {
 	 */
 	public override void onAction(IAction action) {
 		Debug.Log ("Register action: " + action.getActionType () + " on " + action.getDirectObject ().getIdentifier () + " of type " + action.getDirectObject ().getTypeIdentifier ());
+
+		if (action.getActionType ().Equals (ActionType.LEVEL_UP)) {
+			string newVersion = action.getDirectObject ().getTypeIdentifier ();
+			tier = Player.getMajor (newVersion);
+			level = Player.getMiddle (newVersion) * 10 + Player.getMinor (newVersion);
+		} else if (action.getActionType ().Equals (ActionType.MOVE_AREA)) {
+			visitedAreas.Add(MasterDriver.Instance.CurrentArea.position);
+		}
+
+		PlayerCanvas.updateQuestUI = true;
+
 		recentActions.Enqueue (action);
 		if (recentActions.Count > ACTION_STORAGE) {
 			recentActions.Dequeue();
@@ -67,8 +88,16 @@ public class Status : ActionEventListener {
 	/**
 	 * Checks to see if the player has visited the area of the given name
 	 */
-	private bool visitedArea(string name) {
-		return visitedAreas.Contains (name);
+	private bool visitedArea(Point loc) {
+		return visitedAreas.Contains (loc);
+	}
+
+	public List<Point> getVisitedAreas() {
+		return visitedAreas;
+	}
+
+	public void setVisitedAreas(List<Point> areas) {
+		visitedAreas = areas;
 	}
 
 	/**
@@ -78,6 +107,20 @@ public class Status : ActionEventListener {
 		int kills = 0;
 		enemiesKilled.TryGetValue (enemy, out kills);
 		return kills;
+	}
+
+	/**
+	 * Gets the player's current level (Middle and Minor composite)
+	 */
+	public int getLevel() {
+		return level;
+	}
+
+	/**
+	 * Gets the player's current tier (Major version)
+	 */
+	public int getTier() {
+		return tier;
 	}
 
 	/**
@@ -94,4 +137,5 @@ public class Status : ActionEventListener {
 		}
 		return false;
 	}
+	
 }

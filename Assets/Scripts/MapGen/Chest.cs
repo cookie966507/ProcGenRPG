@@ -12,8 +12,8 @@ public class Chest : Interactable {
 	 * The number of items all chests can store
 	 */
 	private static readonly int SLOTS = 10;
-	private static readonly int minBytes = 10000;
-	private static readonly int maxBytes = 1000000;
+	private static int minBytes = 5000000;
+	private static int maxBytes = 50000000;
 
 	private bool dropItems = false;
 	/**
@@ -28,6 +28,8 @@ public class Chest : Interactable {
 			byteObject = Resources.Load<GameObject>("Info/Byte");
 		}
 		items = new List<Item>(SLOTS);
+		minBytes = Utility.ComparableVersionInt(Player.version)*400;
+		maxBytes = Utility.ComparableVersionInt(Player.version)*4000;
 	}
 	
 	// Update is called once per frame
@@ -36,7 +38,7 @@ public class Chest : Interactable {
 
 		if (this.CanInteract()) {
 			transform.GetChild(0).gameObject.SetActive(true);
-			transform.GetChild(0).GetChild(0).GetComponent<Text>().text = "Press " + Player.useKey + " to open";
+			transform.GetChild(0).GetChild(0).GetComponent<Text>().text = "Press " + PersistentInfo.useKey + " to open";
 		} else {
 			transform.GetChild(0).gameObject.SetActive(false);
 		}
@@ -44,16 +46,50 @@ public class Chest : Interactable {
 
 	// KARTIK do the thing!
 	protected override void Interact() {
-		if (Player.useKey != KeyCode.None && Input.GetKeyDown(Player.useKey)) {
-			int tempByteVal = (int)(Random.value*(maxBytes-minBytes) + minBytes);
+		if (PersistentInfo.useKey != KeyCode.None && Input.GetKeyDown(PersistentInfo.useKey)) {
+			transform.GetChild(1).GetComponent<Animator>().SetTrigger("Open");
+
+			int tempByteVal = Random.Range(minBytes,maxBytes);
 			int curByteVal = 0;
 			int byteVal = Mathf.Max(tempByteVal/5, 5000);
 			while (curByteVal < tempByteVal) {
-				GameObject tmp = (GameObject)Instantiate(byteObject, transform.position, Quaternion.identity);
+				GameObject tmp = (GameObject)Instantiate(byteObject, transform.position+Vector3.up, Quaternion.identity);
 				tmp.GetComponent<Byte>().val = byteVal;
 				curByteVal += byteVal;
 			}
-			Destroy(this.gameObject);
+
+			if (Random.value<0.1f) {
+				GameObject tmp = null;
+				GameObject drop = null;
+				if(Random.value<0.7f) {
+					if(Random.value<0.5f) {
+						int tempIdx = (int)(Random.value*MasterDriver.Instance.weapons.Length);
+						tmp = MasterDriver.Instance.weapons[tempIdx];
+						while(!tmp.GetComponent<Item>().RarityVal.Equals(Rarity.Common)) {
+							if(tempIdx==MasterDriver.Instance.weapons.Length-1) {
+								tempIdx = -1;
+							}
+							tmp = MasterDriver.Instance.weapons[++tempIdx];
+						}
+					} else {
+						int tempIdx = (int)(Random.value*MasterDriver.Instance.weapons.Length);
+						tmp = MasterDriver.Instance.weapons[tempIdx];
+						while(tmp.GetComponent<Item>().RarityVal.Equals(Rarity.Common)) {
+							if(tempIdx==MasterDriver.Instance.weapons.Length-1) {
+								tempIdx = -1;
+							}
+							tmp = MasterDriver.Instance.weapons[++tempIdx];
+						}
+					}
+				} else {
+					tmp = MasterDriver.Instance.hacks[(int)(Random.value*(MasterDriver.Instance.hacks.Length-1))+1];
+				}
+				drop = Utility.GetItemDrop(tmp);
+				GameObject.Instantiate(drop, transform.position+(Vector3.up*2f), Quaternion.identity);
+			}
+
+			Destroy(transform.GetChild(0).gameObject);
+			Destroy(this);
 		}
 	}
 

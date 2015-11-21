@@ -17,6 +17,11 @@ public class Enemy : MonoBehaviour {
 	public float attackScale = 1f;
 	public float attackSpeedScale = 1f;
 	public float healthRegenScale = 1f;
+	public float byteDropScale = 1f;
+	public float speedOverride;
+	public float attackRange = 3f;
+
+	public bool spawnedFromGenerator;
 
 	public Effect currentEffect;
 	private float effectTime;
@@ -24,6 +29,7 @@ public class Enemy : MonoBehaviour {
 
 	protected float tempAttackSpeed;
 	protected bool detectedPlayer, retreating;
+	protected bool badassSet;
 	protected bool isBadass;
 	protected string version;
 
@@ -39,18 +45,51 @@ public class Enemy : MonoBehaviour {
 	private static GameObject byteObject;
 
 	private float healthBarTime;
+	public bool hasHealthbar;
 
 	private Vector3 lastPos;
 
+	public DirectObject getDirectObject() {
+		return new DirectObject (gameObject.name, (isBadass? "Badass" : "Basic" ));
+	}
+
+	public SpawnedObject getSpawnedObjectInformation(Area area) {
+		SpawnedObject.Builder builder = SpawnedObject.CreateBuilder ();
+
+		string description = WorldMap.getDescriptionForStarAt (area.position.x, area.position.y);
+		
+		GlobalPosition.Builder pBuilder = GlobalPosition.CreateBuilder ();
+		pBuilder.SetAreaX (area.position.x);
+		pBuilder.SetAreaY (area.position.y);
+		pBuilder.SetLocalX ((int)gameObject.transform.position.x);
+		pBuilder.SetLocalY ((int)gameObject.transform.position.z);
+		builder.SetObjectPosition (pBuilder.Build ());
+		
+		builder.SetObjectData (getDirectObject().getDirectObjectAsProtobuf());
+
+		builder.SetDescription (description);
+
+		EnemyData.Builder eBuilder = EnemyData.CreateBuilder ();
+		eBuilder.SetHealthRemaining ((int)hp);
+		builder.SetEnemyAttributes (eBuilder.Build ());
+
+		return builder.Build ();
+	}
+
+	private float seed1 = 0f;
+	private float seed2 = 0f;
+	private int count = 0;
+
+	private float speedRandomness;
+
+	protected void Awake() {
+		if (!badassSet) {
+			setBadass (Random.value < badassChance);
+		}
+	}
+
 	// Use this for initialization
 	protected void Start () {
-		if(Random.value < badassChance) {
-			isBadass = true;
-			this.transform.localScale *= 2;
-			this.maxHP *= 2;
-			this.baseHealthRegen *= 2;
-			this.name = "Badass " + name;
-		}
 
 		if(hitInfo == null) {
 			hitInfo = Resources.Load<GameObject>("Info/HitInfo");
@@ -59,19 +98,22 @@ public class Enemy : MonoBehaviour {
 			byteObject = Resources.Load<GameObject>("Info/Byte");
 		}
 
-		int minversionInt = Utility.VersionToInt(minVersion);
-		int maxversionInt = Utility.VersionToInt(maxVersion);
-		int minRange = Mathf.Min(Mathf.Max(minversionInt, Utility.VersionToInt(Player.version) - 5), maxversionInt);
-		int maxRange = Mathf.Max(Mathf.Min(Utility.VersionToInt(Player.version) + 5, maxversionInt), minversionInt);
+		int minversionInt = Utility.ComparableVersionInt(minVersion);
+		int maxversionInt = Utility.ComparableVersionInt(maxVersion);
+		int minRange = Mathf.Min(Mathf.Max(minversionInt, Utility.ComparableVersionInt(Player.version) - 10), maxversionInt);
+		int maxRange = Mathf.Max(Mathf.Min(Utility.ComparableVersionInt(Player.version) + 2, maxversionInt), minversionInt);
 
-		int versionInt = Random.Range(minRange,maxRange);
-		this.maxHP *= (int)((versionInt/100f)*(healthScale+1));
-		this.baseAttackDamage *= (versionInt/100f)*(attackScale+1);
-		this.baseHealthRegen *= (versionInt/100f)*(healthRegenScale+1);
-		this.baseAttackSpeed /= (versionInt/100f)*(attackSpeedScale+1);
-		this.version = Utility.IntToVersion(versionInt);
+		int versionInt = (Random.Range(minRange,maxRange)%100) + 1;
+		Debug.Log(this.name + ": versionint = " + versionInt);
+		this.maxHP *= (int)((versionInt)*(healthScale+1));
+		Debug.Log(this.name + ": maxhp = " + this.maxHP);
+		this.baseAttackDamage += (versionInt)*(attackScale);
+		Debug.Log(this.name + ": attack = " + this.baseAttackDamage);
+		this.baseHealthRegen += (versionInt)*(healthRegenScale);
+		this.baseAttackSpeed /= (versionInt)*(attackSpeedScale+1);
+		this.version = Utility.ModVersionBy("1.0.0",versionInt);
+		Debug.Log(this.name + ": version = " + version);
 		hp = maxHP;
-
 		if(possibleItemDrops.Count != possibleItemDropsChance.Count) {
 			Debug.LogWarning("Hey dummy! You need to have equal number of item drops and item drop chances!");
 		} else {
@@ -83,19 +125,49 @@ public class Enemy : MonoBehaviour {
 		currentEffect = Effect.None;
 
 		PlayerCanvas.RegisterEnemyHealthBar(this.gameObject);
+
+		speedRandomness = Random.value*5f;
 	}
 
 	public string GetVersion() {
 		return version;
 	}
 
+	public void SetVersion(string v) {
+		version = v;
+	}
+
+	public bool IsBadass() {
+		return isBadass;
+	}
+
+	public void setBadass(bool b) {
+		if (b && !isBadass) {
+			this.transform.localScale *= 2;
+			this.maxHP *= 2;
+			this.baseHealthRegen *= 2;
+			this.name = "Badass " + name;
+		} else if (!b && isBadass) {
+			this.transform.localScale /= 2;
+			this.maxHP /= 2;
+			this.baseHealthRegen /= 2;
+			this.name = name.Substring(7);
+		}
+		isBadass = b;
+		badassSet = true;
+	}
+
 	public string HealthString() {
 		return hp + "/" + maxHP;
 	}
-	
+
 	// Update is called once per frame
 	protected void Update () {
 //		transform.position = new Vector3(transform.position.x, Mathf.Clamp(transform.position.y, 0f, 1f), transform.position.z);
+
+		if(spawnedFromGenerator && FollowPlayer.traveling > 0) {
+			Destroy(this.gameObject);
+		}
 
 		healthBarTime -= Time.deltaTime;
 
@@ -116,8 +188,10 @@ public class Enemy : MonoBehaviour {
 
 		HandleEffect();
 
-		/*** Updates speed value in Mecanim ***/
-		GetComponent<Animator>().SetFloat("Speed", Vector3.Distance(transform.position, lastPos));
+		if(GetComponent<Animator>() != null) {
+			/*** Updates speed value in Mecanim ***/
+			GetComponent<Animator>().SetFloat("Speed", Vector3.Distance(transform.position, lastPos));
+		}
 
 		/*** Handles manual speed calculation since rigidbody.velocity doesn't work ***/
 		lastPos = transform.position;
@@ -125,6 +199,10 @@ public class Enemy : MonoBehaviour {
 		hp += Time.deltaTime*baseHealthRegen/10f;
 
 		if(transform.position.y < -10f) {
+
+			//trigger kill event for this enemy
+			ActionEventInvoker.primaryInvoker.invokeAction(new PlayerAction(getDirectObject(), ActionType.KILL));
+
 			Destroy(this.gameObject);
 		}
 	}
@@ -136,14 +214,42 @@ public class Enemy : MonoBehaviour {
 		if(currentEffect != Effect.None) {
 			float prevEffectTime = effectTime;
 			effectTime -= Time.deltaTime;
+
 			if(currentEffect == Effect.Deteriorating
 			   && (int)effectTime < (int)prevEffectTime) {
 				GetDamaged(effectValue, false);
 				GameObject tempbyte = (GameObject) GameObject.Instantiate(Utility.GetByteObject(), transform.position, Quaternion.identity);
 				tempbyte.GetComponent<Byte>().val = (int)effectValue*100;
-			} else if (currentEffect == Effect.Slow) {
+			}
+
+			if (currentEffect == Effect.Slow) {
 				transform.position -= (transform.position - lastPos)/2f;
-			} else if (currentEffect == Effect.Stun) {
+			}
+			if (currentEffect == Effect.Bugged) {
+				if ((count % 15) == 0) { //walks in a random direction, changes direction every 15 frames
+					seed1 = Random.value *  - 0.5f;
+					seed2 = Random.value *  - 0.5f;
+				}
+				transform.position += new Vector3(seed1 * 0.6f, 0f, seed2 * 0.6f);
+				count++;
+			}
+			if (currentEffect == Effect.Weakened) {
+				GameObject temp = (GameObject)Instantiate(hitInfo,this.transform.position, hitInfo.transform.rotation);
+				temp.GetComponent<TextMesh>().GetComponent<Renderer>().material.color = Color.cyan;
+			}
+			if (currentEffect == Effect.Virus) {
+				Collider[] hitColliders = Physics.OverlapSphere(transform.position, 1f);
+				int i = 0;
+				while (i < hitColliders.Length) {
+					if (hitColliders[i].gameObject.GetComponent<Enemy>()!=null){
+							Enemy temp = (Enemy) hitColliders[i].gameObject.GetComponent<Enemy>();
+							temp.GetDamaged(Effect.Virus, effectValue, effectTime);
+							temp.GetDamaged(Effect.Deteriorating, effectValue, effectTime);
+					}
+				i++;
+				}
+			} 
+			if (currentEffect == Effect.Stun) {
 				transform.position = lastPos;
 			}
 		}
@@ -171,20 +277,22 @@ public class Enemy : MonoBehaviour {
 		/*** Handle retreating ***/
 		if(GetHealthPercentage() < 0.25f) {
 			retreating = true;
-			transform.LookAt(Player.playerPos.position + new Vector3(0,1,0));
+			transform.LookAt(Player.playerPos.position);
 			transform.eulerAngles = new Vector3(0f, transform.eulerAngles.y + 180f, 0f);
-			transform.Translate(new Vector3(transform.forward.x, 0f, transform.forward.z)*Time.deltaTime*2f, Space.World);
+			transform.Translate(new Vector3(transform.forward.x, 0f, transform.forward.z)*Time.deltaTime*(2f + speedRandomness + speedOverride), Space.World);
 		} else {
 			retreating = false;
 		}
 
 		/*** Handle Moving towards player and attacking ***/
-		if (Vector3.Distance(Player.playerPos.position, transform.position) > 3f && !retreating) {
+		if (Vector3.Distance(Player.playerPos.position, transform.position) > attackRange && !retreating) {
 			GetComponent<Animator>().SetTrigger("PlayerSpotted");
-			rigidbody.MovePosition(Vector3.MoveTowards(transform.position, Player.playerPos.position + new Vector3(0,1,0), 0.1f));
 			transform.LookAt(Player.playerPos.position + new Vector3(0,1,0));
-		} else if (Vector3.Distance(Player.playerPos.position, transform.position) <= 3f && !retreating) {
+			transform.eulerAngles = new Vector3(0f, transform.eulerAngles.y, 0f);
+			transform.Translate(new Vector3(transform.forward.x, 0f, transform.forward.z)*Time.deltaTime*(2f + speedRandomness + speedOverride), Space.World);
+		} else if (Vector3.Distance(Player.playerPos.position, transform.position) <= attackRange && !retreating) {
 			transform.LookAt(Player.playerPos.position + new Vector3(0,1,0));
+			transform.eulerAngles = new Vector3(0f, transform.eulerAngles.y, 0f);
 			tempAttackSpeed -= Time.deltaTime;
 			if(tempAttackSpeed <= 0) {
 				GetComponent<Animator>().SetTrigger("Attack");
@@ -197,7 +305,11 @@ public class Enemy : MonoBehaviour {
 
 	protected virtual void HandleDeath() {
 	/*** Death ****/
-		int tempByteVal = (int)maxHP*1000;
+		int tempByteVal = (int)(Utility.ComparableVersionInt(version)*100*byteDropScale);
+		if(spawnedFromGenerator) {
+			tempByteVal /= 10;
+		}
+		Debug.Log("I'm gonna drop " + tempByteVal + " because my comparable versionint is: " + Utility.ComparableVersionInt(version));
 		int curByteVal = 0;
 		int byteVal = Mathf.Max(tempByteVal/5, 5000);
 		while (curByteVal < tempByteVal) {
@@ -211,18 +323,24 @@ public class Enemy : MonoBehaviour {
 			if(Random.value < kvp.Value) {
 				GameObject temp = null;
 				switch(kvp.Key.GetComponent<Item>().RarityVal) {
-				case Rarity.Common:
-					temp = (GameObject)Instantiate(Utility.GetCommonItemDrop(), this.transform.position, Quaternion.identity);
-					break;
-				case Rarity.Uncommon:
-					temp = (GameObject)Instantiate(Utility.GetUncommonItemDrop(), this.transform.position, Quaternion.identity);
-					break;
+					case Rarity.Common:
+						temp = (GameObject)Instantiate(Utility.GetCommonItemDrop(), this.transform.position, Quaternion.identity);
+						break;
+					case Rarity.Uncommon:
+						temp = (GameObject)Instantiate(Utility.GetUncommonItemDrop(), this.transform.position, Quaternion.identity);
+						break;
+					case Rarity.Rare:
+						temp = (GameObject)Instantiate(Utility.GetRareItemDrop(), this.transform.position, Quaternion.identity);
+						break;
+					case Rarity.Anomaly:
+						temp = (GameObject)Instantiate(Utility.GetAnomalyItemDrop(), this.transform.position, Quaternion.identity);
+						break;
 				}
 				if (temp != null) {
 					temp.GetComponent<ItemDropObject>().item = kvp.Key;
 					Weapon tempweapon = temp.GetComponent<ItemDropObject>().item.GetComponent<Weapon>();
 					if (tempweapon != null) {
-						tempweapon.version = version;
+						tempweapon.version = this.version;
 					}
 				}
 				break;
@@ -232,7 +350,7 @@ public class Enemy : MonoBehaviour {
 		//We should figure out how to handle death in a way that more closely ties player attacks to the death of the enemy
 		//to provide for more complex action tracking capailities, also, I'll move this into the backend
 		//when I move everything else that should be in the model as well
-		DirectObject obj = new DirectObject("N/A", name);
+		DirectObject obj = getDirectObject ();
 		PlayerAction action = new PlayerAction(obj, ActionType.KILL);
 		ActionEventInvoker.primaryInvoker.invokeAction(action);
 		
@@ -245,7 +363,7 @@ public class Enemy : MonoBehaviour {
 			knockbackTime = 0;
 			Vector3 dir = transform.position - knockbackPos;
 			dir.y = 0f;
-			rigidbody.AddForceAtPosition(dir*knockbackVal,knockbackPos, ForceMode.VelocityChange);
+			GetComponent<Rigidbody>().AddForceAtPosition(dir*knockbackVal,knockbackPos, ForceMode.VelocityChange);
 //			rigidbody.velocity = dir*knockbackVal;
 		}
 	}
@@ -277,13 +395,16 @@ public class Enemy : MonoBehaviour {
 	}
 
 	void FixedUpdate () {
-		if(rigidbody.IsSleeping()) {
-			rigidbody.WakeUp();
+		if(GetComponent<Rigidbody>().IsSleeping()) {
+			GetComponent<Rigidbody>().WakeUp();
+		}
+		if(transform.position.y > Player.playerPos.position.y) {
+			transform.position = transform.position - (Vector3.up*Time.deltaTime);
 		}
 	}
 
 	protected virtual void DoIdle() {
-		rigidbody.MoveRotation(Quaternion.Euler(transform.eulerAngles + new Vector3(0,10*Time.deltaTime,0f)));
+		GetComponent<Rigidbody>().MoveRotation(Quaternion.Euler(transform.eulerAngles + new Vector3(0,10*Time.deltaTime,0f)));
 	}
 
 	public void DoKnockback(Vector3 pos, float knockback) {
@@ -293,22 +414,29 @@ public class Enemy : MonoBehaviour {
 	}
 
 	public void GetDamaged(float damage, bool crit) {
+		FMOD_StudioSystem.instance.PlayOneShot("event:/enemy/enemyCombatState",transform.position, PlayerPrefs.GetFloat("MasterVolume")/2f);
 		healthBarTime = 2f;
-		GetComponent<Animator>().SetTrigger("Hurt");
+		if(GetComponent<Animator>() != null) {
+			GetComponent<Animator>().SetTrigger("Hurt");
+		}
 		GameObject temp = (GameObject)Instantiate(hitInfo,this.transform.position, hitInfo.transform.rotation);
+		if (currentEffect == Effect.Weakened) {
+			damage = damage * 1.5f;
+		}
 		if (!detectedPlayer) {
-			hp -= damage*4;
-			temp.GetComponent<TextMesh>().renderer.material.color = Color.blue;
-			temp.GetComponent<TextMesh>().text = "*" + damage*4 + "*";
+			hp -= damage*2;
+			temp.GetComponent<TextMesh>().GetComponent<Renderer>().material.color = Color.blue;
+			temp.GetComponent<TextMesh>().text = "*" + damage*2 + "*";
 		} else if (crit) {
 			hp -= damage*2;
-			temp.GetComponent<TextMesh>().renderer.material.color = Color.yellow;
+			temp.GetComponent<TextMesh>().GetComponent<Renderer>().material.color = Color.yellow;
 			temp.GetComponent<TextMesh>().text = "" + damage*2 + "!";
 		} else {
 			hp -= damage;
 			temp.GetComponent<TextMesh>().text = "" + damage;
 		}
 		detectedPlayer = true;
+		ActionEventInvoker.primaryInvoker.invokeAction (new PlayerAction (this.getDirectObject (), ActionType.ATTACK));
 	}
 
 	public void GetDamaged(Effect attackEffect, float effectValue, float effectTime) {
@@ -332,6 +460,10 @@ public class Enemy : MonoBehaviour {
 
 	public bool ShowHealthbar() {
 		return healthBarTime > 0;
+	}
+
+	public void ShowTheHealthBar() {
+		healthBarTime = 1;
 	}
 
 }

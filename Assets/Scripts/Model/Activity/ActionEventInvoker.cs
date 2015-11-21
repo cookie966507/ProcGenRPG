@@ -11,6 +11,8 @@ public class ActionEventInvoker {
 		get {
 			if(instance == null) {
 				instance = new ActionEventInvoker();
+				//first thing registered should always be the status, so status SHOULD NOT call its base constructor
+				instance.ActionEvent += new ActionEventHandler(Status.playerStatus.onAction);
 			}
 			return instance;
 		}
@@ -30,6 +32,7 @@ public class ActionEventInvoker {
 	 * to the invoker
 	 */
 	public void invokeAction(IAction action) {
+		//World.log ("Fire action: " + action);
 		ActionEvent (action);
 	}
 }

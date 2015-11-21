@@ -8,7 +8,8 @@ class AnimatedTiledTexture : MonoBehaviour
 	public float framesPerSecond = 10f;
 	public bool randFrame = false;
 	public bool randStart = false;
-	
+	public float scale = 1f;
+
 	//the current frame to display
 	private int index = 0;
 	
@@ -21,7 +22,7 @@ class AnimatedTiledTexture : MonoBehaviour
 		
 		//set the tile size of the texture (in UV units), based on the rows and columns
 		Vector2 size = new Vector2(1f / columns, 1f / rows);
-		renderer.sharedMaterial.SetTextureScale("_MainTex", size);
+		GetComponent<Renderer>().sharedMaterial.SetTextureScale("_MainTex", size * scale);
 	}
 	
 	private IEnumerator updateTiling() {
@@ -37,7 +38,7 @@ class AnimatedTiledTexture : MonoBehaviour
 			//split into x and y indexes
 			Vector2 offset = new Vector2(((float)index / columns), ((float)(columns - 1f)/columns) - ((index / columns) * (1f/columns)));
 			
-			renderer.material.SetTextureOffset("_MainTex", offset);
+			GetComponent<Renderer>().material.SetTextureOffset("_MainTex", offset);
 			
 			yield return new WaitForSeconds(1f / framesPerSecond);
 		}
